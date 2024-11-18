@@ -1,0 +1,115 @@
+services:
+  asterisk-realtime:
+    container_name: asterisk-realtime
+    # build:
+    #   context: ./
+    #   dockerfile: ./Dockerfile
+    image: docker-registry.cp.ukrgasbank.com/crm/asterisk-crm:stage-1725572151
+    restart: unless-stopped
+    networks:
+      - asterisk-crm
+    volumes:
+      - /opt/asterisk-realtime/logs:/var/log/asterisk
+      - /opt/asterisk-realtime/configuration:/etc/asterisk
+      - /opt/asterisk-realtime/etc/odbc.ini:/etc/odbc.ini
+      - /opt/asterisk-realtime/etc/odbcinst.ini:/etc/odbcinst.ini
+      - /opt/asterisk-realtime/callsrecords/wav:/tmp/callsrecords
+    # entrypoint: ["/bin/sh","-c"]
+    # command:
+    #       - |
+    #         sleep 20000
+    ports: 
+      - "8088:8088/tcp"
+      - "8089:8089/tcp"
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "30000-30100:30000-30100/udp"
+        #    depends_on:
+        #- mariadb-asterisk
+    depends_on:
+      - mariadb-asterisk
+
+  callrecordssheduler:
+    container_name: callrecordssheduler
+    build:
+      context: ./callrecordssheduler/
+      dockerfile: ./Dockerfile
+    image: callrecordssheduler
+    restart: unless-stopped
+    environment:
+      - AWSS3=s3://ugb-test-ast
+    networks:
+      - asterisk-crm
+    volumes:
+      - /opt/asterisk-realtime/callsrecords:/tmp/callsrecords
+      - /opt/callrecordssheduler/mp3_convertiong.sh:/opt/mp3_convertiong.sh
+    entrypoint: ["/bin/sh","-c"]
+    command:
+          - |
+            sleep 10000
+            ./mp3_convertiong.sh
+            sleep 180
+    # ports: 
+    #   - "80:80/tcp"
+    depends_on:
+      - mariadb-asterisk
+      - asterisk-realtime
+
+
+
+  mariadb-asterisk:
+    container_name: mariadb-asterisk
+    image: mariadb:10.11.9
+    restart: unless-stopped
+
+    networks:
+      - asterisk-crm
+    volumes:
+      - type: bind
+        source: /opt/mariadb-asterisk
+        target: /var/lib/mysql
+    ports: 
+      - "3306:3306/tcp" 
+    environment:
+      - MARIADB_ROOT_PASSWORD=111111111111111111
+      - MARIADB_DATABASE=asterisk
+      - MARIADB_USER=asterisk
+      - MARIADB_PASSWORD=111111111111111111
+
+  phpmyadmin:
+    container_name: phpmyadmin
+    image: phpmyadmin:5.2.0-apache
+    restart: unless-stopped
+
+    networks:
+      - asterisk-crm
+    ports:
+      - "80:80"
+    environment:
+      - MARIADB_ROOT_PASSWORD=111111111111111111
+      - PMA_ARBITRARY=0
+      - PMA_HOSTS=mariadb-asterisk,other
+      - PMA_PORT=3306
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped    
+    ports:
+      - 9000:9000
+    volumes:
+      - portainer_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - asterisk-crm
+
+networks:
+  asterisk-crm:
+    driver: bridge
+    ipam:
+        config:
+            - 
+              subnet: 192.168.2.0/24
+              gateway: 192.168.2.1
+volumes:
+  portainer_data:
